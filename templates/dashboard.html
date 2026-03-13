@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Smart Surveillance — Multi-Camera Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:      #0a0c10;
+    --panel:   #11141c;
+    --border:  #1f2535;
+    --accent:  #4f8ef7;
+    --red:     #e74c3c;
+    --orange:  #f39c12;
+    --green:   #2ecc71;
+    --text:    #d0d6e8;
+    --muted:   #5a6380;
+    --radius:  10px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif;
+         min-height: 100vh; display: flex; flex-direction: column; }
+
+  /* ── Top bar ── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 99;
+  }
+  .logo { font-size: 1rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 10px; }
+  .logo .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red);
+               box-shadow: 0 0 8px var(--red); animation: blink 1.4s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .header-actions { display: flex; gap: 10px; align-items: center; }
+  button.btn-primary {
+    background: var(--accent); color: #fff; border: none; border-radius: 6px;
+    padding: 8px 18px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: opacity .2s;
+  }
+  button.btn-primary:hover { opacity: 0.85; }
+  button.btn-danger  { background: var(--red); }
+  button.btn-ghost   { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  button.btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── Settings panel ── */
+  .settings-panel {
+    position: fixed; top: 0; right: -360px; width: 340px; height: 100vh;
+    background: var(--panel); border-left: 1px solid var(--border);
+    z-index: 300; transition: right .3s cubic-bezier(.4,0,.2,1);
+    display: flex; flex-direction: column; overflow-y: auto;
+    box-shadow: -4px 0 30px rgba(0,0,0,.5);
+  }
+  .settings-panel.open { right: 0; }
+  .settings-header {
+    padding: 16px 20px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    font-weight: 700; font-size: 0.95rem; position: sticky; top: 0;
+    background: var(--panel); z-index: 1;
+  }
+  .settings-body { padding: 20px; display: flex; flex-direction: column; gap: 24px; }
+  .settings-group h3 { font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--accent); margin-bottom: 14px; }
+  .slider-row { margin-bottom: 12px; }
+  .slider-meta { display: flex; justify-content: space-between; margin-bottom: 5px;
+    font-size: 0.8rem; }
+  .slider-label { color: var(--text); }
+  .slider-val   { color: var(--accent); font-weight: 700; font-family: 'JetBrains Mono', monospace;
+    min-width: 48px; text-align: right; }
+  input[type=range] {
+    -webkit-appearance: none; width: 100%; height: 4px;
+    background: var(--border); border-radius: 2px; outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--accent); cursor: pointer; box-shadow: 0 0 6px rgba(79,142,247,.6);
+  }
+  input[type=range]:hover { background: #2a3050; }
+  .slider-hint { font-size: 0.7rem; color: var(--muted); margin-top: 3px; }
+  .settings-save-badge {
+    font-size: 0.72rem; color: var(--green); opacity: 0;
+    transition: opacity .4s; margin-left: 8px; font-weight: 600;
+  }
+  .settings-save-badge.show { opacity: 1; }
+
+  /* ── Layout ── */
+  .content { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── Camera grid ── */
+  .camera-grid {
+    flex: 1; display: grid; gap: 14px; padding: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+    align-content: start; overflow-y: auto;
+  }
+  .camera-tile {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden;
+    display: flex; flex-direction: column; transition: border-color .2s;
+  }
+  .camera-tile:hover { border-color: var(--accent); }
+  .tile-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; background: rgba(255,255,255,.03);
+    border-bottom: 1px solid var(--border);
+  }
+  .tile-label { font-weight: 600; font-size: 0.9rem; display: flex; align-items: center; gap: 8px; }
+  .badge-live  { background: var(--red); color: #fff; border-radius: 4px; padding: 1px 7px; font-size: 0.7rem; font-weight: 700; }
+  .badge-off   { background: var(--muted); color: #fff; border-radius: 4px; padding: 1px 7px; font-size: 0.7rem; font-weight: 700; }
+  .tile-stats  { display: flex; gap: 14px; font-size: 0.75rem; color: var(--muted); align-items: center; }
+  .tile-stats span { display: flex; align-items: center; gap: 4px; }
+  .stat-val    { color: var(--text); font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+
+  .camera-feed { position: relative; background: #000; display: flex; align-items: center; justify-content: center; }
+  .camera-feed img { width: 100%; max-height: 340px; object-fit: contain; display: block; }
+  .no-feed-msg { padding: 60px 20px; color: var(--muted); text-align: center; font-size: 0.85rem; }
+  .tile-remove-btn {
+    background: transparent; border: none; color: var(--muted); font-size: 1.1rem; cursor: pointer;
+    padding: 4px 6px; border-radius: 4px; line-height: 1; transition: color .2s;
+  }
+  .tile-remove-btn:hover { color: var(--red); }
+
+  /* empty-state */
+  .empty-state {
+    grid-column: 1/-1; text-align: center; padding: 80px 20px;
+    color: var(--muted);
+  }
+  .empty-state .big-icon { font-size: 3.5rem; opacity: .3; }
+  .empty-state p { margin-top: 12px; font-size: 0.9rem; line-height: 1.7; }
+
+  /* ── Right sidebar — alert log ── */
+  .sidebar {
+    width: 320px; min-width: 280px; background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .sidebar-header {
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.85rem; font-weight: 600;
+  }
+  .alert-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .alert-item {
+    border-radius: 6px; padding: 9px 12px; margin-bottom: 6px;
+    border-left: 3px solid var(--muted); background: rgba(255,255,255,.03);
+    font-size: 0.78rem; line-height: 1.5; word-break: break-word;
+  }
+  .alert-item.sev-CRITICAL { border-color: var(--red); }
+  .alert-item.sev-HIGH     { border-color: #e67e22; }
+  .alert-item.sev-MEDIUM   { border-color: var(--orange); }
+  .alert-item .alert-meta  { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.7rem; margin-bottom: 2px; }
+  .alert-cam-badge { background: var(--accent); color: #fff; border-radius: 3px; padding: 0 5px; font-size: 0.65rem; font-weight: 700; }
+
+  /* ── Add-camera modal ── */
+  .modal-backdrop {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.7); z-index: 200;
+    align-items: center; justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 28px 32px; width: 420px; max-width: 95vw;
+  }
+  .modal h2 { font-size: 1.1rem; margin-bottom: 20px; }
+  .form-group { margin-bottom: 14px; }
+  .form-group label { font-size: 0.8rem; color: var(--muted); display: block; margin-bottom: 5px; }
+  .form-group input {
+    width: 100%; background: #0d0f16; border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); padding: 9px 12px; font-size: 0.85rem;
+  }
+  .form-group input:focus { outline: none; border-color: var(--accent); }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="dot"></div>
+    Smart Surveillance &nbsp;·&nbsp; Multi-Camera
+  </div>
+  <div class="header-actions">
+    <button class="btn-primary btn-ghost" onclick="exportLog()">⬇ Export Log</button>
+    <button class="btn-primary btn-ghost" onclick="toggleSettings()">⚙ Settings</button>
+    <button class="btn-primary" onclick="openModal()">＋ Add Camera</button>
+  </div>
+</header>
+
+<div class="content">
+  <div class="camera-grid" id="cameraGrid">
+    <div class="empty-state" id="emptyState">
+      <div class="big-icon">📷</div>
+      <p>No cameras added yet.<br>Click <strong>+ Add Camera</strong> to get started.</p>
+    </div>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span>⚡ Live Alerts</span>
+      <button class="btn-ghost" style="font-size:0.75rem;padding:4px 10px" onclick="clearAlerts()">Clear</button>
+    </div>
+    <div class="alert-list" id="alertList">
+      <p style="padding:16px;color:var(--muted);font-size:0.8rem;text-align:center">Alerts will appear here…</p>
+    </div>
+  </aside>
+</div>
+
+<!-- Add Camera Modal -->
+<div class="modal-backdrop" id="modalBackdrop" onclick="closeModal(event)">
+  <div class="modal">
+    <h2>📷 Add Camera Source</h2>
+    <div class="form-group">
+      <label>Camera Name</label>
+      <input id="camLabel" placeholder="e.g. Store Entrance" value="Camera 1"/>
+    </div>
+    <div class="form-group">
+      <label>Video Source</label>
+      <input id="camSource" placeholder="0 = webcam, or path/to/video.mp4, or rtsp://..." value="0"/>
+    </div>
+    <div class="form-group">
+      <label>Camera ID (unique)</label>
+      <input id="camId" placeholder="cam1"/>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost btn-primary" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary" onclick="addCamera()">▶ Start Camera</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const cameras = {};   // cam_id → { stats, intervalId }
+
+  /* ── Modal ───────────────────────────────────────────────── */
+  let camCounter = 0;
+  function openModal() {
+    camCounter++;
+    document.getElementById('camId').value    = 'cam' + camCounter;
+    document.getElementById('camLabel').value = 'Camera ' + camCounter;
+    document.getElementById('modalBackdrop').classList.add('open');
+  }
+  function closeModal(e) {
+    if (!e || e.target === document.getElementById('modalBackdrop'))
+      document.getElementById('modalBackdrop').classList.remove('open');
+  }
+
+  /* ── Add camera ──────────────────────────────────────────── */
+  async function addCamera() {
+    const id     = document.getElementById('camId').value.trim()     || ('cam' + Date.now());
+    const source = document.getElementById('camSource').value.trim();
+    const sourceVal = source === '' ? '0' : (source === '0' ? 0 : source);
+    const label  = document.getElementById('camLabel').value.trim()  || id;
+
+    closeModal();
+    await fetch('/api/cameras/add', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({id, source: sourceVal, label})
+    });
+    addCameraTile(id, label, source || '0');
+  }
+
+  /* ── Remove camera ───────────────────────────────────────── */
+  async function removeCamera(id) {
+    await fetch('/api/cameras/remove', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({id})
+    });
+    if (cameras[id]) {
+      clearInterval(cameras[id].intervalId);
+      delete cameras[id];
+    }
+    const tile = document.getElementById('tile-' + id);
+    if (tile) tile.remove();
+    document.getElementById('emptyState').style.display =
+      Object.keys(cameras).length === 0 ? 'block' : 'none';
+  }
+
+  /* ── Create tile DOM ─────────────────────────────────────── */
+  function addCameraTile(id, label, source) {
+    document.getElementById('emptyState').style.display = 'none';
+    const grid = document.getElementById('cameraGrid');
+
+    const tile = document.createElement('div');
+    tile.className = 'camera-tile';
+    tile.id = 'tile-' + id;
+    tile.innerHTML = `
+      <div class="tile-header">
+        <div class="tile-label">
+          <span class="badge-live" id="badge-${id}">LIVE</span>
+          ${label}
+        </div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="tile-stats">
+            <span>👤 <span class="stat-val" id="pcount-${id}">0</span></span>
+            <span>⚡ <span class="stat-val" id="fps-${id}">0</span> fps</span>
+          </div>
+          <button class="tile-remove-btn" onclick="removeCamera('${id}')" title="Remove camera">✕</button>
+        </div>
+      </div>
+      <div class="camera-feed">
+        <img id="feed-${id}" src="/video_feed/${id}" alt="${label} feed"
+             onerror="this.src='/video_feed/${id}'"/>
+      </div>`;
+    grid.appendChild(tile);
+
+    cameras[id] = {
+      intervalId: setInterval(() => updateStats(id), 1200)
+    };
+  }
+
+  /* ── Stats polling ───────────────────────────────────────── */
+  async function updateStats(id) {
+    try {
+      const r = await fetch(`/api/cameras/${id}/stats`);
+      if (!r.ok) return;
+      const s = await r.json();
+      const pc  = document.getElementById('pcount-' + id);
+      const fp  = document.getElementById('fps-' + id);
+      const bg  = document.getElementById('badge-' + id);
+      if (pc) pc.textContent = s.person_count ?? 0;
+      if (fp) fp.textContent = s.fps ?? 0;
+      if (bg) {
+        bg.textContent = s.running ? 'LIVE' : 'OFF';
+        bg.className   = s.running ? 'badge-live' : 'badge-off';
+      }
+    } catch {}
+  }
+
+  /* ── Global alert polling ────────────────────────────────── */
+  let lastAlertCount = 0;
+  async function pollAlerts() {
+    try {
+      const r = await fetch('/api/alerts/all?n=60');
+      const alerts = await r.json();
+      if (alerts.length === lastAlertCount) return;
+      lastAlertCount = alerts.length;
+      const list = document.getElementById('alertList');
+      list.innerHTML = alerts.length === 0
+        ? '<p style="padding:16px;color:var(--muted);font-size:0.8rem;text-align:center">No alerts yet…</p>'
+        : alerts.slice(0, 40).map(a => `
+          <div class="alert-item sev-${a.severity || ''}">
+            <div class="alert-meta">
+              <span>
+                ${a.label ? `<span class="alert-cam-badge">${a.label}</span> ` : ''}
+                ${a.time_str || ''}
+              </span>
+              <span>${a.severity || ''}</span>
+            </div>
+            <strong>${a.type || ''}</strong> — ${a.message || ''}
+          </div>`).join('');
+    } catch {}
+  }
+
+  async function clearAlerts() {
+    // Clear all cameras' alerts
+    try { await fetch('/api/alerts/clear', {method:'POST'}); } catch {}
+    lastAlertCount = 0;
+    document.getElementById('alertList').innerHTML =
+      '<p style="padding:16px;color:var(--muted);font-size:0.8rem;text-align:center">Cleared.</p>';
+  }
+
+  function exportLog() { window.open('/api/log/export'); }
+
+  /* ── On load: restore any existing cameras from server ──── */
+  async function init() {
+    // Restore cameras
+    try {
+      const r = await fetch('/api/cameras');
+      const cams = await r.json();
+      cams.forEach(c => {
+        if (!cameras[c.cam_id]) addCameraTile(c.cam_id, c.label, c.source);
+      });
+    } catch {}
+    setInterval(pollAlerts, 1500);
+    loadSettings();
+    loadNotifications();
+  }
+  init();
+
+  /* ── Settings panel ──────────────────────────────────────── */
+  function toggleSettings() {
+    document.getElementById('settingsPanel').classList.toggle('open');
+  }
+
+  let saveTimer = null;
+  function onSlider(key, rawVal, valId, fmt) {
+    const num = parseFloat(rawVal);
+    document.getElementById(valId).textContent = fmt(num);
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => saveSettings(), 400);
+  }
+
+  async function loadSettings() {
+    try {
+      const r = await fetch('/api/config');
+      const c = await r.json();
+      const set = (id, val, fmt) => {
+        const el = document.getElementById('sl-' + id);
+        if (el) el.value = val;
+        const vl = document.getElementById('val-' + id);
+        if (vl) vl.textContent = fmt(val);
+      };
+      set('yolo_conf',         c.yolo_conf,         v => parseFloat(v).toFixed(2));
+      set('loiter_seconds',    c.loiter_seconds,    v => parseInt(v) + ' s');
+      set('loiter_radius_px',  c.loiter_radius_px,  v => parseInt(v) + ' px');
+      set('abandon_seconds',   c.abandon_seconds,   v => parseInt(v) + ' s');
+      set('running_px_per_sec',c.running_px_per_sec,v => parseInt(v) + ' px/s');
+    } catch {}
+  }
+
+  async function saveSettings() {
+    const g = id => parseFloat(document.getElementById('sl-' + id)?.value || 0);
+    const payload = {
+      yolo_conf:          g('yolo_conf'),
+      loiter_seconds:     g('loiter_seconds'),
+      loiter_radius_px:   g('loiter_radius_px'),
+      abandon_seconds:    g('abandon_seconds'),
+      running_px_per_sec: g('running_px_per_sec'),
+    };
+    try {
+      await fetch('/api/config', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const badge = document.getElementById('saveBadge');
+      badge.classList.add('show');
+      setTimeout(() => badge.classList.remove('show'), 1800);
+    } catch {}
+  }
+
+  async function loadNotifications() {
+    try {
+      const r = await fetch('/api/notifications');
+      const n = await r.json();
+      const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? ''; };
+      const setCheck = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
+      setCheck('notify_enabled', n.notify_enabled);
+      setCheck('notify_email_enabled', n.notify_email_enabled);
+      set('notify_smtp_host', n.notify_smtp_host);
+      set('notify_smtp_port', n.notify_smtp_port);
+      set('notify_smtp_user', n.notify_smtp_user);
+      set('notify_email_to', n.notify_email_to);
+      setCheck('notify_webhook_enabled', n.notify_webhook_enabled);
+      set('notify_webhook_url', n.notify_webhook_url);
+    } catch {}
+  }
+
+  async function saveNotifications() {
+    const payload = {
+      notify_enabled:         document.getElementById('notify_enabled')?.checked ?? false,
+      notify_email_enabled:   document.getElementById('notify_email_enabled')?.checked ?? false,
+      notify_smtp_host:       document.getElementById('notify_smtp_host')?.value?.trim() || 'smtp.gmail.com',
+      notify_smtp_port:       parseInt(document.getElementById('notify_smtp_port')?.value || '587', 10),
+      notify_smtp_user:       document.getElementById('notify_smtp_user')?.value?.trim() || '',
+      notify_email_to:        document.getElementById('notify_email_to')?.value?.trim() || '',
+      notify_webhook_enabled: document.getElementById('notify_webhook_enabled')?.checked ?? false,
+      notify_webhook_url:     document.getElementById('notify_webhook_url')?.value?.trim() || '',
+    };
+    const pw = document.getElementById('notify_smtp_password')?.value?.trim();
+    if (pw) payload.notify_smtp_password = pw;
+    try {
+      await fetch('/api/notifications', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload)
+      });
+    } catch (e) {}
+  }
+</script>
+
+<!-- Settings Panel -->
+<div class="settings-panel" id="settingsPanel">
+  <div class="settings-header">
+    <span>⚙ Parameters</span>
+    <div style="display:flex;align-items:center">
+      <span class="settings-save-badge" id="saveBadge">✓ Saved</span>
+      <button class="tile-remove-btn" onclick="toggleSettings()" style="font-size:1.2rem;margin-left:8px">✕</button>
+    </div>
+  </div>
+  <div class="settings-body">
+
+    <div class="settings-group">
+      <h3>🔍 Detection</h3>
+      <div class="slider-row">
+        <div class="slider-meta">
+          <span class="slider-label">YOLO Confidence</span>
+          <span class="slider-val" id="val-yolo_conf">0.20</span>
+        </div>
+        <input type="range" id="sl-yolo_conf" min="0.05" max="0.90" step="0.01" value="0.20"
+               oninput="onSlider('yolo_conf', this.value, 'val-yolo_conf', v => parseFloat(v).toFixed(2))"/>
+        <div class="slider-hint">Lower = detect more; higher = fewer false positives</div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <h3>⏱ Loitering</h3>
+      <div class="slider-row">
+        <div class="slider-meta">
+          <span class="slider-label">Trigger After</span>
+          <span class="slider-val" id="val-loiter_seconds">10 s</span>
+        </div>
+        <input type="range" id="sl-loiter_seconds" min="3" max="60" step="1" value="10"
+               oninput="onSlider('loiter_seconds', this.value, 'val-loiter_seconds', v => parseInt(v)+' s')"/>
+        <div class="slider-hint">Seconds a person must stay still before alert fires</div>
+      </div>
+      <div class="slider-row">
+        <div class="slider-meta">
+          <span class="slider-label">Stationary Radius</span>
+          <span class="slider-val" id="val-loiter_radius_px">80 px</span>
+        </div>
+        <input type="range" id="sl-loiter_radius_px" min="20" max="300" step="5" value="80"
+               oninput="onSlider('loiter_radius_px', this.value, 'val-loiter_radius_px', v => parseInt(v)+' px')"/>
+        <div class="slider-hint">Movement within this radius counts as "stationary"</div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <h3>🎒 Abandoned Bag</h3>
+      <div class="slider-row">
+        <div class="slider-meta">
+          <span class="slider-label">Trigger After</span>
+          <span class="slider-val" id="val-abandon_seconds">8 s</span>
+        </div>
+        <input type="range" id="sl-abandon_seconds" min="3" max="60" step="1" value="8"
+               oninput="onSlider('abandon_seconds', this.value, 'val-abandon_seconds', v => parseInt(v)+' s')"/>
+        <div class="slider-hint">Seconds a bag is alone before alert fires</div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <h3>🏃 Running Speed</h3>
+      <div class="slider-row">
+        <div class="slider-meta">
+          <span class="slider-label">Speed Threshold</span>
+          <span class="slider-val" id="val-running_px_per_sec">120 px/s</span>
+        </div>
+        <input type="range" id="sl-running_px_per_sec" min="40" max="400" step="10" value="120"
+               oninput="onSlider('running_px_per_sec', this.value, 'val-running_px_per_sec', v => parseInt(v)+' px/s')"/>
+        <div class="slider-hint">Pixels/sec above which a person is flagged as running</div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <h3>📧 Notifications (Email / Webhook)</h3>
+      <p class="slider-hint" style="margin-bottom:12px">Get notified for <strong>Loitering</strong> and <strong>Weapon detected</strong>. Enable email and/or webhook below.</p>
+      <div class="slider-row">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.85rem">
+          <input type="checkbox" id="notify_enabled" onchange="saveNotifications()"/>
+          <span>Enable notifications</span>
+        </label>
+      </div>
+      <div class="slider-row">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.85rem">
+          <input type="checkbox" id="notify_email_enabled" onchange="saveNotifications()"/>
+          <span>Send email</span>
+        </label>
+      </div>
+      <div class="form-group" style="margin-top:8px">
+        <label class="slider-label">SMTP server</label>
+        <input type="text" id="notify_smtp_host" placeholder="smtp.gmail.com" style="margin-top:4px"/>
+      </div>
+      <div class="form-group">
+        <label class="slider-label">SMTP port</label>
+        <input type="number" id="notify_smtp_port" placeholder="587" style="margin-top:4px"/>
+      </div>
+      <div class="form-group">
+        <label class="slider-label">Email (from)</label>
+        <input type="text" id="notify_smtp_user" placeholder="you@gmail.com" style="margin-top:4px"/>
+      </div>
+      <div class="form-group">
+        <label class="slider-label">App password</label>
+        <input type="password" id="notify_smtp_password" placeholder="Leave blank to keep existing" style="margin-top:4px"/>
+      </div>
+      <div class="form-group">
+        <label class="slider-label">Send to (comma-separated)</label>
+        <input type="text" id="notify_email_to" placeholder="alert@company.com" style="margin-top:4px"/>
+      </div>
+      <div class="slider-row" style="margin-top:14px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.85rem">
+          <input type="checkbox" id="notify_webhook_enabled" onchange="saveNotifications()"/>
+          <span>Send to webhook URL</span>
+        </label>
+      </div>
+      <div class="form-group">
+        <label class="slider-label">Webhook URL (Slack, Discord, etc.)</label>
+        <input type="url" id="notify_webhook_url" placeholder="https://hooks.slack.com/..." style="margin-top:4px"/>
+      </div>
+      <button class="btn-primary" style="margin-top:12px" onclick="saveNotifications(); document.getElementById('saveBadge').textContent='Notifications saved'; document.getElementById('saveBadge').classList.add('show'); setTimeout(()=>document.getElementById('saveBadge').classList.remove('show'), 2000)">Save notifications</button>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
